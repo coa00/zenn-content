@@ -131,6 +131,5 @@ monorepo/
 Claude Code をはじめとする AI ツールを活用した開発に興味のある方、一緒に働きませんか？
 
 - 採用情報・お問い合わせ: https://purpom-media-lab.com/
-- X（Twitter）: [@purpom_media_lab](https://twitter.com/purpom_media_lab)
 
 お気軽にお声がけください。
