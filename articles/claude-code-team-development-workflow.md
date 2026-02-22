@@ -4,7 +4,6 @@ emoji: "🤖"
 type: "tech"
 topics: ["ClaudeCode", "AI開発", "Playwright", "コードレビュー", "開発プロセス"]
 published: true
-cover: "/images/claude-code-team-workflow.webp"
 ---
 
 ## はじめに
