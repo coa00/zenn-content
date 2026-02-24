@@ -1,5 +1,5 @@
 ---
-title: "Amplify × DynamoDB の「検索に弱い」を OpenSearch で補い、継続的にスケールさせる"
+title: "DynamoDB の検索が辛すぎて Aurora 移行を決めかけた。でも月額 $27 で全部解決した話"
 emoji: "🔍"
 type: "tech"
 topics: ["AWS", "DynamoDB", "OpenSearch", "Amplify", "アーキテクチャ"]
@@ -8,11 +8,11 @@ published: true
 
 ## はじめに
 
-DynamoDB だけで検索機能を実現しようとして、挫折した。
+Aurora への移行を本気で検討していた。見積もりも取った。Amplify の Data モデルを捨てて SQL スキーマを書き直す段取りまで考えた。
 
-フィルタ条件が 5 つ以上になると DynamoDB の Query/Scan では対応しきれない。全文検索はそもそもできない。ソート順を変えるたびに GSI を追加する羽目になる。「DynamoDB は検索には向いていない」——わかっていたけど、Amplify Gen2 で DynamoDB がデフォルトのデータストアである以上、なんとかしたかった。
+きっかけは、不動産検索のフィルタ条件が 5 つを超えたあたりだった。DynamoDB の Query/Scan では対応しきれない。全文検索はそもそもできない。ソート順を変えるたびに GSI を追加する羽目になる。「もう DynamoDB じゃ無理だ」——チーム全員がそう思っていた。
 
-結論から言うと、**DynamoDB を捨てる必要はなかった**。OpenSearch を「検索レイヤー」として追加するだけで、月額 $27 の追加コストで全文検索・複雑なフィルタ・柔軟なソートを手に入れた。Amplify の DynamoDB 中心の開発体験を維持したまま、検索機能だけをスケールアップできる。
+結論から言うと、**Aurora には移行しなかった**。OpenSearch を「検索レイヤー」として追加するだけで、月額 $27 の追加コストで全文検索・複雑なフィルタ・柔軟なソートを手に入れた。Amplify の DynamoDB 中心の開発体験を維持したまま、検索機能だけをスケールアップできる。
 
 この記事では、[Purpom Media Lab](https://purpom-media-lab.com/) で開発している不動産テックプロダクト（propform / soho-tokyo）での実装経験をもとに、DynamoDB の検索の弱点を OpenSearch で補った方法と、Aurora に移行しなかった判断の背景を共有します。
 
@@ -115,6 +115,88 @@ export const handler = async (event: DynamoDBStreamEvent) => {
 
 DynamoDB の各テーブルに対応する OpenSearch index を用意し、Streams の INSERT/MODIFY/REMOVE イベントに応じてドキュメントを同期します。
 
+### 検索クエリの Before / After
+
+DynamoDB だけだった頃と、OpenSearch 導入後のクエリの違いを見ると、検索体験の変化がわかります。
+
+**Before: DynamoDB（複数条件の絞り込み）**
+
+```typescript
+// DynamoDB: パーティションキー + FilterExpression で無理やり対応
+const result = await dynamoClient.query({
+  TableName: 'Properties',
+  KeyConditionExpression: '#area = :area',
+  FilterExpression: '#price BETWEEN :minPrice AND :maxPrice AND #size >= :minSize',
+  ExpressionAttributeValues: { ':area': '渋谷区', ':minPrice': 5000000, ':maxPrice': 10000000, ':minSize': 50 },
+  // → 1,000 件取得して FilterExpression で 10 件に絞る非効率な処理
+});
+```
+
+**After: OpenSearch（同じ条件 + 全文検索 + ソート）**
+
+```typescript
+// OpenSearch: 任意の条件を組み合わせ + 全文検索 + ソートが 1 クエリで完結
+const result = await opensearchClient.search({
+  index: 'propform-prod-properties',
+  body: {
+    query: {
+      bool: {
+        must: [
+          { match: { description: 'ペット可 オフィス' } },  // 全文検索
+          { term: { area: '渋谷区' } },
+          { range: { price: { gte: 5000000, lte: 10000000 } } },
+          { range: { size: { gte: 50 } } },
+        ],
+      },
+    },
+    sort: [{ price: 'asc' }],  // 任意フィールドでソート
+    from: 0, size: 20,         // ページネーション
+  },
+});
+// → 条件に合う 20 件だけを直接取得。100〜200ms で返る
+```
+
+DynamoDB では実現できなかった「全文検索 + 複数条件フィルタ + ソート + ページネーション」が、1 つのクエリで完結します。
+
+## ハマったポイント：日本語検索が動かない
+
+OpenSearch を導入して最初にぶつかったのが、**日本語の全文検索が正しく動かない**問題でした。
+
+「渋谷 オフィス」で検索しても結果が 0 件。原因は、OpenSearch のデフォルトの analyzer（standard analyzer）が日本語の形態素解析に対応していないことでした。「渋谷オフィス」が 1 つのトークンとして扱われ、部分一致しない。
+
+解決策は、index 作成時に **ICU analyzer + kuromoji tokenizer** を設定すること。
+
+```json
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "japanese_analyzer": {
+          "type": "custom",
+          "tokenizer": "kuromoji_tokenizer",
+          "filter": ["kuromoji_baseform", "lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "description": { "type": "text", "analyzer": "japanese_analyzer" }
+    }
+  }
+}
+```
+
+この設定を入れた瞬間、「渋谷 オフィス ペット可」のような日本語キーワード検索が正常に動き始めました。**OpenSearch の日本語検索は、デフォルトでは動かない**。これを知らずに「OpenSearch も検索できないじゃないか」と焦った時間が一番の無駄でした。
+
+## 運用で意識すべきこと
+
+DynamoDB Streams + Lambda の同期には、いくつか運用上の注意点があります。
+
+- **同期遅延**: Streams → Lambda → OpenSearch の伝播には通常 数百ms〜数秒かかる。リアルタイム性が必要な画面では「書き込み直後にDynamoDB を直接参照する」フォールバックを用意
+- **Lambda エラー時のリトライ**: Streams トリガーの Lambda がエラーになるとリトライされるが、繰り返し失敗するとレコードが期限切れで消える。DLQ（Dead Letter Queue）を設定して取りこぼしを防止
+- **インデックス再構築**: OpenSearch のマッピングを変更した場合、既存データの再インデックスが必要。DynamoDB の全件 Scan → OpenSearch に Bulk Insert するスクリプトを用意しておくと安心
+
 ## 1 インスタンス × index 分離：Amplify sandbox 問題の解決
 
 ### 問題：sandbox ごとに OpenSearch が作られる
@@ -161,9 +243,21 @@ Before / After を整理すると、以下の通りです。
 
 月額 $27 の追加コストで、検索体験が根本的に変わりました。
 
+## 導入ステップ：5 ステップで始められる
+
+OpenSearch の追加は、以下の手順で進められます。
+
+1. **OpenSearch ドメインを作成** — t3.small.search の 1 インスタンス構成で十分。月額約 $27
+2. **日本語 analyzer 付きの index を作成** — kuromoji tokenizer を設定。これを忘れると日本語検索が動かない
+3. **DynamoDB Streams を有効化** — 対象テーブルの Streams を `NEW_AND_OLD_IMAGES` で有効化
+4. **同期 Lambda をデプロイ** — Streams トリガーで OpenSearch に upsert/delete する Lambda を作成。DLQ も忘れずに設定
+5. **検索 API を追加** — OpenSearch にクエリを投げる API を追加。既存の DynamoDB CRUD API はそのまま維持
+
+GSI が 5 個を超えた、FilterExpression で絞り込み後のヒット率が 10% を切った——そのあたりが OpenSearch 導入を検討するタイミングです。
+
 ## まとめ
 
-DynamoDB は検索に弱い。これは事実です。しかし、**弱点があるからといって、DynamoDB を捨てる必要はない**。
+Aurora への移行を本気で考えていた。見積もりも取った。でも結局、**DynamoDB を捨てる必要はなかった**。
 
 OpenSearch を検索レイヤーとして追加するだけで、DynamoDB の弱点は補える。書き込みは DynamoDB、検索は OpenSearch。DynamoDB Streams + Lambda で同期し、データの整合性を保つ。Amplify Gen2 の DynamoDB 中心の開発体験はそのまま維持しながら、検索機能だけを段階的にスケールアップできる構成です。
 
