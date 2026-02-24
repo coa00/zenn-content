@@ -14,11 +14,11 @@ Aurora への移行を本気で検討していた。見積もりも取った。A
 
 結論から言うと、**Aurora には移行しなかった**。OpenSearch を「検索レイヤー」として追加し、index の命名規則で複数プロダクト・複数環境を 1 インスタンスに集約する。月額 $27 の追加コストで、検索もマルチテナントも全部解決した。
 
-この記事では、[Purpom Media Lab](https://purpom-media-lab.com/) で開発している不動産テックプロダクト（propform / soho-tokyo）での実装経験をもとに、DynamoDB の検索とマルチテナントの課題を OpenSearch で解決した方法を共有します。
+この記事では、実際に運用している不動産テックプロダクトでの実装経験をもとに、DynamoDB の検索とマルチテナントの課題を OpenSearch で解決した方法を共有します。
 
 ## DynamoDB だけで運用していた頃の課題
 
-propform と soho-tokyo は、Amplify Gen2 で構築した不動産テックプロダクトです。物件データ・区画データを DynamoDB に保存し、ユーザーに一覧表示・検索機能を提供しています。2 つのプロダクトが同じ AWS アカウント上で稼働し、それぞれに staging / prod / 開発者ごとの sandbox 環境を持つ構成です。
+私たちが運用しているのは、Amplify Gen2 で構築した不動産テックプロダクトです。物件データ・区画データを DynamoDB に保存し、ユーザーに一覧表示・検索機能を提供しています。複数のプロダクトが同じ AWS アカウント上で稼働し、それぞれに staging / prod / 開発者ごとの sandbox 環境を持つ構成です。
 
 初期は DynamoDB の Query と GSI（グローバルセカンダリインデックス）で対応していましたが、プロダクトの成長とともに**検索**と**マルチテナント**の両面で課題が顕在化しました。
 
@@ -44,7 +44,7 @@ DynamoDB のソートはソートキーに依存します。「価格順」「�
 
 #### 4. 複数プロダクト × 複数環境のデータ分離
 
-propform と soho-tokyo は別プロダクトですが、同じ Amplify バックエンドの設計パターンを共有しています。DynamoDB はテーブル単位でデータが分離されるため、プロダクト間のデータ混在は起きません。
+複数のプロダクトが同じ Amplify バックエンドの設計パターンを共有しています。DynamoDB はテーブル単位でデータが分離されるため、プロダクト間のデータ混在は起きません。
 
 問題は**検索基盤を追加したとき**に発生します。検索エンジンをプロダクトや環境ごとに個別に立てると、インスタンス数が掛け算で増えていく。2 プロダクト × 3 環境（staging / prod / sandbox）= 6 インスタンス。開発者が 5 人いれば sandbox だけで 10 インスタンス。月額 $27 × 16 = **$432/月**。検索を追加しただけでインフラコストが 10 倍になる。
 
@@ -151,7 +151,7 @@ const result = await dynamoClient.query({
 ```typescript
 // OpenSearch: 任意の条件を組み合わせ + 全文検索 + ソートが 1 クエリで完結
 const result = await opensearchClient.search({
-  index: 'propform-prod-properties',
+  index: 'projectA-prod-properties',
   body: {
     query: {
       bool: {
@@ -221,12 +221,12 @@ DynamoDB Streams + Lambda の同期には、いくつか運用上の注意点が
 
 ```
 OpenSearch ドメイン（1 インスタンス）
-├── propform-stg-properties     ← propform staging の物件
-├── propform-stg-sections       ← propform staging の区画
-├── propform-prod-properties    ← propform prod の物件
-├── propform-prod-sections      ← propform prod の区画
-├── sohotokyo-stg-properties    ← soho-tokyo staging の物件
-├── sohotokyo-prod-properties   ← soho-tokyo prod の物件
+├── projectA-stg-properties     ← プロダクト A staging の物件
+├── projectA-stg-sections       ← プロダクト A staging の区画
+├── projectA-prod-properties    ← プロダクト A prod の物件
+├── projectA-prod-sections      ← プロダクト A prod の区画
+├── projectB-stg-properties     ← プロダクト B staging の物件
+├── projectB-prod-properties    ← プロダクト B prod の物件
 └── sandbox-{user}-properties   ← sandbox は必要な場合のみ
 ```
 
