@@ -1,5 +1,5 @@
 ---
-title: "DynamoDB の検索が辛すぎて Aurora 移行を決めかけた。でも月額 $27 で全部解決した話"
+title: "Amplify, DynamoDB の検索やマルチテナントの問題を OpenSearch の導入で月額 $27 で全部解決した話"
 emoji: "🔍"
 type: "tech"
 topics: ["AWS", "DynamoDB", "OpenSearch", "Amplify", "アーキテクチャ"]
