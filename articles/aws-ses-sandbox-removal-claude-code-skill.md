@@ -214,9 +214,11 @@ Claude:   → ses-request.sh を実行
 
 人間が覚えておく必要があるのは「SES の申請をして」という指示だけです。Pre-flight チェック、API の使い分け、エラーハンドリングはすべてスクリプトが担います。
 
-## プラグイン化して公開
+## プラグインとして公開
 
-Skill をチーム内だけでなく外部にも共有するため、Claude Code Plugin として構成しました。
+Skill をチーム内だけでなく外部にも共有するため、Claude Code Plugin として構成し、GitHub で公開しました。
+
+https://github.com/purpom-media-lab/claude-ses-plugin
 
 ```
 claude-ses-plugin/
@@ -232,14 +234,7 @@ claude-ses-plugin/
 └── README.md
 ```
 
-インストールは1行で済みます。
-
-```bash
-/plugin marketplace add purpom-media-lab/claude-ses-plugin
-/plugin install ses-manage@purpom-media-lab
-```
-
-ローカルでのテストも簡単です。
+ローカルで試す場合は以下のコマンドで利用できます。
 
 ```bash
 claude --plugin-dir ./claude-ses-plugin
