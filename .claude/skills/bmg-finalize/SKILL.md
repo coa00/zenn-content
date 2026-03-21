@@ -101,7 +101,7 @@ git diff main --name-only
 3. E2E テスト作成/更新
 4. Sandbox でテスト（pnpm sandbox:once → dev:sandbox:app / dev:sandbox:admin）
 5. /simplify + /build-fix-review + /bug-trend-review review + /structured-output-review でレビュー
-6. PR 作成 → Sentry bot コメント確認 → マージ
+6. PR 作成 → コンフリクト確認 → Lint 確認 → Sentry bot レビュー確認 → マージ
 7. デプロイ完了後、stg で E2E テスト
 8. Worktree 削除
 9. Linear に完了報告
@@ -115,7 +115,7 @@ git diff main --name-only
 3. E2E テスト作成/更新
 4. ehime-stg でテスト（dev:app:ehime-stg / dev:admin:ehime-stg）
 5. /simplify + /build-fix-review + /bug-trend-review review + /structured-output-review でレビュー
-6. PR 作成 → Sentry bot コメント確認 → マージ
+6. PR 作成 → コンフリクト確認 → Lint 確認 → Sentry bot レビュー確認 → マージ
 7. Worktree 削除
 8. Linear に完了報告
 ```
@@ -318,30 +318,6 @@ Skill: structured-output-review <対象ファイルパス>
 
 CRITICAL レベルの指摘があれば修正してからコミットする。
 
-### 5e. Lint & Type チェック
-
-レビュー修正が完了したら、差分に応じて Lint と型チェックを実行する。
-
-差分ファイルから対象を判定:
-
-```bash
-git diff ${baseBranch}...HEAD --name-only
-```
-
-**フロントエンド変更あり**（`apps/` 配下の変更がある場合）:
-
-```bash
-pnpm check:frontend
-```
-
-**バックエンド変更あり**（`packages/` 配下の変更がある場合）:
-
-```bash
-pnpm check:backend
-```
-
-エラーがあれば修正してコミットする。3 ラウンドで解消しない場合はユーザーに相談する。
-
 ---
 
 ## Phase 6: PR 作成とマージ
@@ -377,7 +353,46 @@ EOF
 )"
 ```
 
-### 6c. Sentry bot コメントの確認
+### 6c. コンフリクトの確認
+
+PR 作成後、ベースブランチとのコンフリクトがないか確認する:
+
+```bash
+gh pr view --json mergeable,mergeStateStatus
+```
+
+コンフリクトがある場合:
+
+1. ベースブランチをフェッチしてマージする:
+   ```bash
+   git fetch origin ${baseBranch} && git merge origin/${baseBranch}
+   ```
+2. コンフリクトを解消してコミット・プッシュする
+3. 再度コンフリクトがないことを確認する
+
+### 6d. Lint & Type チェック（PR 後の最終確認）
+
+PR 作成後、差分ファイルに応じて Lint と型チェックを最終確認する:
+
+```bash
+git diff ${baseBranch}...HEAD --name-only
+```
+
+**フロントエンド変更あり**（`apps/` 配下の変更がある場合）:
+
+```bash
+pnpm check:frontend
+```
+
+**バックエンド変更あり**（`packages/` 配下の変更がある場合）:
+
+```bash
+pnpm check:backend
+```
+
+エラーがあれば修正してコミット・プッシュする。
+
+### 6e. Sentry bot コメントの確認
 
 PR 作成後、Sentry bot が PR にリアクション・コメントを投稿する。リアクションでステータスを判定する:
 
@@ -465,7 +480,27 @@ E2E_ENV=stg pnpm exec playwright test --config e2e/playwright.config.ts
 
 ## Phase 8: Worktree 削除
 
-### 8a. 親リポジトリに移動して worktree を削除
+### 8a. sandbox / vite プロセスの停止
+
+worktree 削除前に、この worktree で起動中の sandbox や vite プロセスを停止する:
+
+```bash
+WORKTREE_PATH=$(pwd)
+
+# この worktree の CWD で動いている ampx sandbox プロセスを検出・停止
+lsof +D "${WORKTREE_PATH}" 2>/dev/null | grep -E 'ampx|sandbox' | awk '{print $2}' | sort -u | xargs -r kill 2>/dev/null || true
+
+# この worktree の CWD で動いている vite (dev server) プロセスを検出・停止
+lsof +D "${WORKTREE_PATH}" 2>/dev/null | grep -E 'vite|node.*dev' | awk '{print $2}' | sort -u | xargs -r kill 2>/dev/null || true
+
+# プロセスが終了するまで少し待つ
+sleep 2
+
+# まだ残っている場合は強制終了
+lsof +D "${WORKTREE_PATH}" 2>/dev/null | grep -E 'ampx|sandbox|vite' | awk '{print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
+```
+
+### 8b. 親リポジトリに移動して worktree を削除
 
 ```bash
 # 現在の worktree パスを記録
