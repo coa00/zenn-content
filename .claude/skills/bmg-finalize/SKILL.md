@@ -101,10 +101,11 @@ git diff main --name-only
 3. E2E テスト作成/更新
 4. Sandbox でテスト（pnpm sandbox:once → dev:sandbox:app / dev:sandbox:admin）
 5. /simplify + /build-fix-review + /bug-trend-review review + /structured-output-review でレビュー
-6. PR 作成 → コンフリクト確認 → Lint 確認 → Sentry bot レビュー確認 → マージ
-7. デプロイ完了後、stg で E2E テスト
-8. Worktree 削除
-9. Linear に完了報告
+6. /amplify-circular-dep-check で循環参照チェック
+7. PR 作成 → コンフリクト確認 → Lint 確認 → Sentry bot レビュー確認 → マージ
+8. デプロイ完了後、stg で E2E テスト
+9. Worktree 削除
+10. Linear に完了報告
 ```
 
 **バックエンド変更なし:**
@@ -317,6 +318,16 @@ Skill: structured-output-review <対象ファイルパス>
 - 全フィールドに `.describe()` が付いているか
 
 CRITICAL レベルの指摘があれば修正してからコミットする。
+
+### 5e. CloudFormation 循環参照チェック（バックエンド変更ありの場合のみ）
+
+バックエンド変更がある場合、`/amplify-circular-dep-check` スキルで Amplify Gen2 のスタック間循環参照を静的解析する:
+
+```
+Skill: amplify-circular-dep-check
+```
+
+循環参照が検出された場合は、デプロイ前に必ず解消する。CFn の循環参照はデプロイ時に初めて発覚すると修正コストが高いため、このチェックを PR 前に実施する。
 
 ---
 
