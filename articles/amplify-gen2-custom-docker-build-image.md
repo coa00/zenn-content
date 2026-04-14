@@ -262,19 +262,6 @@ mkdir -p out && (cd dist && find . -type f ! -name '*.map' -exec cp --parents {}
 
 カスタムイメージに rsync を足せば済む話ですが、「Amplify 環境で動くことを保証する amplify.yml」はカスタムイメージ前提に書きすぎると壊しやすい。**カスタムイメージがなくても動く** ラインは極力守る方が運用は楽です。
 
-### 段階導入はコミットメッセージで見分けがつくようにする
-
-ECR Public リポジトリにプッシュするタグを `v1.0.0` / `v1.1.0` と振っておいて、Amplify 側の環境変数 `_CUSTOM_IMAGE` で切り替えられるようにしました。`latest` 固定だとロールバックが効かないし、どの Amplify ジョブがどのイメージで走ったか後から辿れません。
-
-```bash
-# staging だけ新バージョンで様子を見たい時
-aws amplify update-app \
-  --app-id <YOUR_STAGING_APP_ID> \
-  --environment-variables _CUSTOM_IMAGE=public.ecr.aws/j9g5b1t3/amplify-build:v1.1.0
-```
-
-`list-jobs` で `jobSummaries[].commitMessage` と突き合わせれば、どの施策がどのビルドで効いたかを後から定量評価できます。まさにこの記事の計測がそれでした。
-
 ## お試し用のパブリックイメージ
 
 実際に記事中で使っているイメージを ECR Public に置いてあります。認証不要で pull できるので、手元ですぐ試せます。
