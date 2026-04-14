@@ -220,7 +220,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     container:
-      image: public.ecr.aws/<your-ecr>/amplify-build:e2e
+      image: public.ecr.aws/j9g5b1t3/amplify-build:e2e
     steps:
       - uses: actions/checkout@v6
       - uses: actions/cache@v5
@@ -268,10 +268,28 @@ ECR Public リポジトリにプッシュするタグを `v1.0.0` / `v1.1.0` と
 # staging だけ新バージョンで様子を見たい時
 aws amplify update-app \
   --app-id <YOUR_STAGING_APP_ID> \
-  --environment-variables _CUSTOM_IMAGE=public.ecr.aws/<YOUR_ECR>/amplify-build:v1.1.0
+  --environment-variables _CUSTOM_IMAGE=public.ecr.aws/j9g5b1t3/amplify-build:v1.1.0
 ```
 
 `list-jobs` で `jobSummaries[].commitMessage` と突き合わせれば、どの施策がどのビルドで効いたかを後から定量評価できます。まさにこの記事の計測がそれでした。
+
+## お試し用のパブリックイメージ
+
+実際に記事中で使っているイメージを ECR Public に置いてあります。認証不要で pull できるので、手元ですぐ試せます。
+
+```bash
+# build ステージ (Amplify カスタムビルド / CI lint・build 用)
+docker pull public.ecr.aws/j9g5b1t3/amplify-build:latest
+
+# e2e ステージ (Playwright + Chromium 同梱)
+docker pull public.ecr.aws/j9g5b1t3/amplify-build:e2e
+```
+
+- **Gallery**: https://gallery.ecr.aws/j9g5b1t3/amplify-build
+- **同梱**: Amazon Linux 2023 / Node.js 22 / pnpm 10.28.1 / bun / AWS CLI v2 / CDK / Chromium Lambda Layer v127.0.0
+- **注意**: この ECR Public リポジトリは記事紹介用に公開しているものです。本番運用で長期的に依存する場合は、自前の ECR にフォークしておくことを推奨します (タグやライフサイクルの管理を自前で握れるため)
+
+Dockerfile のソースは後日 OSS 公開する予定なので、中身をカスタマイズしたい場合はそちらをベースにしてください。
 
 ## まとめ
 
