@@ -62,7 +62,7 @@ Tailscale は WireGuard ベースのメッシュ VPN です。各端末に `100.
 外出先端末（Tailscale）
       │  Tailscale ネットワーク（暗号化・NAT 越え）
       ▼
-自宅Mac（100.77.252.97 / リモートログインON）
+自宅Mac（kohei.tail46a9b1.ts.net / リモートログインON）
       └─ tmux 上で claude を実行
 ```
 
@@ -70,7 +70,7 @@ Tailscale は WireGuard ベースのメッシュ VPN です。各端末に `100.
 
 ### セットアップ：自宅 Mac 側（接続される側）
 
-1. Tailscale をインストール → ログイン（IP `100.77.252.97` が発行される）
+1. Tailscale をインストール → ログイン（`100.x.x.x` の IP と、MagicDNS 名 `kohei.tail46a9b1.ts.net` が割り当てられる）
 2. **システム設定 → 一般 → 共有 → リモートログイン（SSH）を ON**
 3. `tmux` を用意（なければ `brew install tmux`）
 
@@ -87,14 +87,14 @@ cask 版はコマンドのパスが通らないことがあるので、エイリ
 
 ```bash
 alias tailscale="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-tailscale status   # 自宅Mac(100.77.252.97) が一覧に出れば疎通OK
+tailscale status   # 自宅Mac(kohei.tail46a9b1.ts.net) が一覧に出れば疎通OK
 ```
 
-これで `ssh coa@100.77.252.97` でログインできる状態になりました。ただ、IP の直打ちは味気ないですし、後述の terminfo 問題もあるので、`~/.ssh/config` に別名を切っておきます。
+これで `ssh coa@kohei.tail46a9b1.ts.net` でログインできる状態になりました。ただ、毎回この長いホスト名を打つのは手間ですし、後述の terminfo 問題もあるので、`~/.ssh/config` に別名を切っておきます。
 
 ```ssh-config
 Host home-mac
-    HostName 100.77.252.97
+    HostName kohei.tail46a9b1.ts.net
     User coa
     SetEnv TERM=xterm-256color
 ```
@@ -123,7 +123,7 @@ ssh-copy-id -i ~/.ssh/id_rsa.pub home-mac
 実行すると、こう怒られました。
 
 ```text
-Received disconnect from 100.77.252.97 port 22:2: Too many authentication failures
+Received disconnect from kohei.tail46a9b1.ts.net port 22:2: Too many authentication failures
 ```
 
 これは**鍵認証に失敗した回数が原因**です。ssh-agent に複数の鍵が載っていると、SSH はそれらを片っ端からサーバーに提示します。その結果、パスワード認証にたどり着く前に、サーバー側の試行回数の上限（`MaxAuthTries`、既定は 6）に達してしまうのです。
@@ -210,6 +210,51 @@ claude
 ### おまけ：ローカルで入力が二重になったら
 
 接続元のシェルで、`a` が `aa`、`ls` が `llss` のように二重表示されることがあります。これは SSH の接続が一時的に乱れたときに起きる端末エコーの問題で、リモート側は健全です。`stty sane`（または `reset`）で直ります。改善しないときは、ターミナルを開き直してください。
+
+## 画面共有（VNC）でも接続する
+
+CLI だけでなく、GUI ごと操作したい場面もあります。Tailscale で経路が通っているので、SSH と同じように **macOS の画面共有（VNC）もルーター設定なしで**つながります。SSH（リモートログイン）と画面共有は別々の設定なので、自宅 Mac 側で画面共有を有効にするだけです。
+
+接続元が Mac であれば、Finder で `⌘K`（移動 → サーバへ接続）から `vnc://coa@kohei.tail46a9b1.ts.net` を開き、`coa` のログインパスワードを入力します。
+
+### ハマりどころ：「リモートマネージメント」だとアカウントのパスワードで入れない
+
+私の環境では、ID とパスワードを入れても画面共有に入れませんでした。SSH で自宅 Mac の状態を調べたところ、有効になっていたのは「画面共有」ではなく **「リモートマネージメント（ARD）」**でした。
+
+```bash
+# 自宅Mac側の状態を SSH 経由で確認
+launchctl print system/com.apple.screensharing | grep "state ="   # → not running
+pgrep -lf ARDAgent                                                  # → ARDAgent が稼働中
+```
+
+リモートマネージメントが有効なときの VNC ログインは、アカウントのパスワードではなく **ARD のアクセス権限**で制御されます。そのため、その権限が割り当てられていないと、正しいパスワードを入れても弾かれてしまいます。
+
+対処は、リモートマネージメントを止めて、素直に「画面共有」を有効化することです。自宅 Mac に SSH で入り、次を実行します（`sudo` のパスワードが必要なので、TTY のある通常のターミナルから実行します）。
+
+```bash
+# リモートマネージメント(ARD)を停止
+sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -deactivate -stop
+# 画面共有を有効化
+sudo launchctl enable system/com.apple.screensharing
+sudo launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.screensharing.plist
+```
+
+画面共有は**オンデマンド起動**のため、有効化した直後は `screensharingd` が動いておらず、ポート 5900 も待機していないように見えることがあります。実際に接続を試みると起動するので、慌てずに `vnc://coa@kohei.tail46a9b1.ts.net` へつないでみてください。認証がアカウント方式に変わっているので、今度は `coa` とログインパスワードで入れます。
+
+:::message
+システム設定からも切り替えられます（システム設定 → 一般 → 共有）。「リモートマネージメント」と「画面共有」は同時に有効化できないため、画面共有だけをオンにします。外出先で GUI を触れないときは、上記のように SSH 経由で切り替えます。
+:::
+
+### CLI と GUI の使い分け
+
+これで、外部から自宅 Mac へ 2 通りの方法でアクセスできるようになりました。
+
+| 用途 | 方法 | 接続 |
+|------|------|------|
+| CLI 作業（Claude Code など） | SSH ＋ tmux | `ssh home-mac` |
+| GUI 操作・画面確認 | 画面共有（VNC） | `vnc://coa@kohei.tail46a9b1.ts.net` |
+
+モバイル回線だと VNC は描画が重くなりがちです。コーディングは SSH + tmux のほうが軽快で、回線が切れても作業が続きます。画面の確認や GUI 操作が必要なときだけ VNC を使う、という併用がおすすめです。
 
 ## まとめ
 
