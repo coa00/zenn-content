@@ -47,7 +47,7 @@ published: true
 | 経路 | 内容 | 評価 |
 |------|------|------|
 | A: Deco の VPN サーバー + DDNS | ルーターの VPN 機能で入口を作る | ❌ Deco X50 に VPN サーバー項目が無く、そもそも入口は HG8045Q 側 |
-| B: ポート転送で SSH を直接公開 | `ssh -p <port> coa@DDNS名` | ❌ 二段転送が必要 + NURO 配布機は管理権限が制限されポート転送/DMZ を設定できない可能性大 + SSH 直公開は総当たりの的 |
+| B: ポート転送で SSH を直接公開 | `ssh -p <port> you@DDNS名` | ❌ 二段転送が必要 + NURO 配布機は管理権限が制限されポート転送/DMZ を設定できない可能性大 + SSH 直公開は総当たりの的 |
 | C: **Tailscale** | 両端に入れてメッシュ VPN を張る | ✅ **採用** |
 
 経路 B は、仮に設定できたとしても SSH をインターネットに直接さらすことになります。鍵認証を必須にしたり、ポートを変更したり、fail2ban を入れたりと、運用の手間がかさみます。そして何より、NURO 配布の HG8045Q は管理権限が絞られていて、そもそもポート転送の設定自体ができない見込みでした。
@@ -64,7 +64,7 @@ Tailscale は WireGuard ベースのメッシュ VPN です。各端末に `100.
 外出先端末（Tailscale）
       │  Tailscale ネットワーク（暗号化・NAT 越え）
       ▼
-自宅Mac（m2-macbook-air-black.tail46a9b1.ts.net / リモートログインON）
+自宅Mac（home-mac.tailnet.ts.net / リモートログインON）
       └─ tmux 上で claude を実行
 ```
 
@@ -72,7 +72,7 @@ Tailscale は WireGuard ベースのメッシュ VPN です。各端末に `100.
 
 ### セットアップ：自宅 Mac 側（接続される側）
 
-1. Tailscale をインストール → ログイン（`100.x.x.x` の IP と、MagicDNS 名 `m2-macbook-air-black.tail46a9b1.ts.net` が割り当てられる）
+1. Tailscale をインストール → ログイン（`100.x.x.x` の IP と、MagicDNS 名 `home-mac.tailnet.ts.net` が割り当てられる）
 2. **システム設定 → 一般 → 共有 → リモートログイン（SSH）を ON**
 3. `tmux` を用意（なければ `brew install tmux`）
 
@@ -89,15 +89,15 @@ cask 版はコマンドのパスが通らないことがあるので、エイリ
 
 ```bash
 alias tailscale="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-tailscale status   # 自宅Mac(m2-macbook-air-black.tail46a9b1.ts.net) が一覧に出れば疎通OK
+tailscale status   # 自宅Mac(home-mac.tailnet.ts.net) が一覧に出れば疎通OK
 ```
 
-これで `ssh coa@m2-macbook-air-black.tail46a9b1.ts.net` でログインできる状態になりました。ただ、毎回この長いホスト名を打つのは手間ですし、後述の terminfo 問題もあるので、`~/.ssh/config` に別名を切っておきます。
+これで `ssh you@home-mac.tailnet.ts.net` でログインできる状態になりました。ただ、毎回この長いホスト名を打つのは手間ですし、後述の terminfo 問題もあるので、`~/.ssh/config` に別名を切っておきます。
 
 ```ssh-config
 Host home-mac
-    HostName m2-macbook-air-black.tail46a9b1.ts.net
-    User coa
+    HostName home-mac.tailnet.ts.net
+    User you
     SetEnv TERM=xterm-256color
 ```
 
@@ -127,7 +127,7 @@ ssh-copy-id -i ~/.ssh/id_rsa.pub home-mac
 実行すると、こう怒られました。
 
 ```text
-Received disconnect from m2-macbook-air-black.tail46a9b1.ts.net port 22:2: Too many authentication failures
+Received disconnect from home-mac.tailnet.ts.net port 22:2: Too many authentication failures
 ```
 
 これは**鍵認証に失敗した回数が原因**です。ssh-agent に複数の鍵が載っていると、SSH はそれらを片っ端からサーバーに提示します。その結果、パスワード認証にたどり着く前に、サーバー側の試行回数の上限（`MaxAuthTries`、既定は 6）に達してしまうのです。
@@ -168,8 +168,8 @@ ssh -o BatchMode=yes home-mac 'echo KEY_AUTH_OK; hostname; whoami'
 
 ```text
 KEY_AUTH_OK
-m2-macbook-air-black.local
-coa
+home-mac.local
+you
 ```
 
 パスワードが使えない状態でホスト名とユーザーが返ってきました。これで、**純粋に鍵だけで認証が通っている**ことが確認できます。Before / After で並べると、次のとおりです。
@@ -219,7 +219,7 @@ claude
 
 CLI だけでなく、GUI ごと操作したい場面もあります。Tailscale で経路が通っているので、SSH と同じように **macOS の画面共有（VNC）もルーター設定なしで**つながります。SSH（リモートログイン）と画面共有は別々の設定なので、自宅 Mac 側で画面共有を有効にするだけです。
 
-接続元が Mac であれば、Finder で `⌘K`（移動 → サーバへ接続）から `vnc://coa@m2-macbook-air-black.tail46a9b1.ts.net` を開き、`coa` のログインパスワードを入力します。
+接続元が Mac であれば、Finder で `⌘K`（移動 → サーバへ接続）から `vnc://you@home-mac.tailnet.ts.net` を開き、`you` のログインパスワードを入力します。
 
 ### ハマりどころ：「リモートマネージメント」だとアカウントのパスワードで入れない
 
@@ -243,7 +243,7 @@ sudo launchctl enable system/com.apple.screensharing
 sudo launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.screensharing.plist
 ```
 
-画面共有は**オンデマンド起動**のため、有効化した直後は `screensharingd` が動いておらず、ポート 5900 も待機していないように見えることがあります。実際に接続を試みると起動するので、慌てずに `vnc://coa@m2-macbook-air-black.tail46a9b1.ts.net` へつないでみてください。認証がアカウント方式に変わっているので、今度は `coa` とログインパスワードで入れます。
+画面共有は**オンデマンド起動**のため、有効化した直後は `screensharingd` が動いておらず、ポート 5900 も待機していないように見えることがあります。実際に接続を試みると起動するので、慌てずに `vnc://you@home-mac.tailnet.ts.net` へつないでみてください。認証がアカウント方式に変わっているので、今度は `you` とログインパスワードで入れます。
 
 :::message
 システム設定からも切り替えられます（システム設定 → 一般 → 共有）。「リモートマネージメント」と「画面共有」は同時に有効化できないため、画面共有だけをオンにします。外出先で GUI を触れないときは、上記のように SSH 経由で切り替えます。
@@ -256,7 +256,7 @@ sudo launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.screensh
 | 用途 | 方法 | 接続 |
 |------|------|------|
 | CLI 作業（Claude Code など） | SSH ＋ tmux | `ssh home-mac` |
-| GUI 操作・画面確認 | 画面共有（VNC） | `vnc://coa@m2-macbook-air-black.tail46a9b1.ts.net` |
+| GUI 操作・画面確認 | 画面共有（VNC） | `vnc://you@home-mac.tailnet.ts.net` |
 
 モバイル回線だと VNC は描画が重くなりがちです。コーディングは SSH + tmux のほうが軽快で、回線が切れても作業が続きます。画面の確認や GUI 操作が必要なときだけ VNC を使う、という併用がおすすめです。
 
