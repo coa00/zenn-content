@@ -101,6 +101,8 @@ Host home-mac
 
 これ以降は `ssh home-mac` だけで入れるようになります。
 
+`HostName` には Tailscale の IP（`100.x.x.x`）ではなく、**MagicDNS 名（`〜.ts.net`）を書いておくのがおすすめ**です。IP は再割り当てで変わることがありますが、MagicDNS 名は変わらないため、設定をそのまま使い続けられます。MagicDNS は Tailscale の管理画面から有効化でき、各端末に `マシン名.テイルネット名.ts.net` の名前が付きます。なお、初回接続時はホスト鍵の確認を求められるので、`yes` で受け入れて known_hosts に登録します。
+
 :::message
 **`missing or unsuitable terminal: xterm-ghostty` が出たら**
 ローカルが Ghostty だと `TERM=xterm-ghostty` が SSH 越しに伝わります。しかし自宅 Mac 側に対応する terminfo が無いため、`tmux` などがこれを拒否してしまいます。上記の `SetEnv TERM=xterm-256color` を入れておくと回避できます。terminfo ごとコピーする恒久的な解決なら、`infocmp -x | ssh home-mac -- tic -x -` を一度実行しておきます。
